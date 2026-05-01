@@ -147,4 +147,245 @@ function updateWeatherDisplay(data) {
         const index = directions.indexOf(data.windDirection.toUpperCase());
         windDegrees = index * 22.5;
     } else {
-        windDegrees = parseFloat
+        windDegrees = parseFloat(data.windDirection);
+    }
+   
+    const index = Math.round(windDegrees / 22.5) % 16;
+    const compassDir = directions[index];
+   
+    windDirectionEl.textContent = `${compassDir} ${Math.round(windDegrees)}°`;
+    windAngleEl.textContent = `${Math.round(windDegrees)}°`;
+    needleEl.style.transform = `translate(-50%, -100%) rotate(${windDegrees}deg)`;
+    
+    updateAQIColor(data.aqi);
+}
+
+function updateAQIColor(aqi) {
+    const aqiValue = parseFloat(aqi);
+    let color = '#4caf50';
+    
+    if (aqiValue > 50 && aqiValue <= 100) {
+        color = '#ffeb3b';
+    } else if (aqiValue > 100 && aqiValue <= 200) {
+        color = '#ff9800';
+    } else if (aqiValue > 200 && aqiValue <= 300) {
+        color = '#f44336';
+    } else if (aqiValue > 300 && aqiValue <= 400) {
+        color = '#9c27b0';
+    } else if (aqiValue > 400) {
+        color = '#795548';
+    }
+    
+    aqiEl.style.color = color;
+    aqiEl.style.textShadow = `0 0 8px ${color}`;
+}
+
+function updateThermometer(temp) {
+    const height = Math.min(100, Math.max(0, (temp / 50) * 100));
+    thermometerEl.style.height = `${height}%`;
+    
+    if (temp < 10) {
+        thermometerEl.style.background = '#42a5f5';
+    } else if (temp < 25) {
+        thermometerEl.style.background = '#4caf50';
+    } else if (temp < 35) {
+        thermometerEl.style.background = '#ff9800';
+    } else {
+        thermometerEl.style.background = '#f44336';
+    }
+}
+
+function initTemperatureChart() {
+    const ctx = document.getElementById('temperatureChart').getContext('2d');
+    
+    temperatureChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Array(24).fill().map((_, i) => `${i}:00`),
+            datasets: [{
+                label: 'Temperature (°C)',
+                data: Array(24).fill(null),
+                borderColor: '#ffcc00',
+                backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointBackgroundColor: '#ffcc00',
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    grid: { color: 'rgba(255, 255, 255, 0.1)', drawBorder: false },
+                    ticks: { color: 'rgba(255, 255, 255, 0.7)', font: { size: 10 } }
+                },
+                x: {
+                    grid: { display: false, drawBorder: false },
+                    ticks: { color: 'rgba(255, 255, 255, 0.7)', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 }
+                }
+            },
+            elements: { line: { tension: 0.4 } }
+        }
+    });
+}
+
+function updateTemperatureChart(temperatureData) {
+    if (!temperatureChart) return;
+    
+    temperatureChart.data.datasets[0].data = temperatureData;
+    
+    const now = new Date();
+    temperatureChart.data.labels = temperatureData.map((_, i) => {
+        const d = new Date(now);
+        d.setHours(now.getHours() - (temperatureData.length - 1 - i));
+        return d.getHours() + ':00';
+    });
+    
+    temperatureChart.update();
+}
+
+function getSampleData() {
+    const now = new Date();
+    const hour = now.getHours();
+    
+    return {
+        temperature: 25 + 10 * Math.sin(hour * Math.PI / 12),
+        humidity: 50 + 30 * Math.sin(hour * Math.PI / 12),
+        highTemp: 32,
+        lowTemp: 18,
+        pressure: 1012 + (Math.random() * 4 - 2),
+        uvIndex: Math.min(10, Math.max(1, Math.round(3 + 5 * Math.sin(hour * Math.PI / 12)))),
+        pm25: 45,
+        pm10: 78,
+        coLevel: 0.8,
+        no2: 25,
+        windSpeed: 2 + (Math.random() * 5),
+        windDirection: Math.round(Math.random() * 360),
+        rainfall: hour > 6 && hour < 18 ? Math.random() * 5 : 0,
+        aqi: 85
+    };
+}
+
+async function fetchSunTimes() {
+    try {
+        const response = await fetch('https://api.sunrise-sunset.org/json?lat=23.6889&lng=86.9661&formatted=0');
+        const data = await response.json();
+        
+        if (data.status === "OK") {
+            const sunriseUTC = new Date(data.results.sunrise);
+            const sunsetUTC = new Date(data.results.sunset);
+            
+            const sunrise = new Date(sunriseUTC.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+            const sunset = new Date(sunsetUTC.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+            
+            const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
+            document.getElementById('sunrise-time').textContent = sunrise.toLocaleTimeString('en-IN', timeOptions);
+            document.getElementById('sunset-time').textContent = sunset.toLocaleTimeString('en-IN', timeOptions);
+            
+            updateSunPosition(sunrise, sunset);
+            setInterval(() => updateSunPosition(sunrise, sunset), 60000);
+        }
+    } catch (error) {
+        console.error("Error fetching sun data:", error);
+        document.getElementById('sunrise-time').textContent = "06:00 AM";
+        document.getElementById('sunset-time').textContent = "06:00 PM";
+    }
+}
+
+function updateSunPosition(sunrise, sunset) {
+    const now = new Date();
+    const nowTime = now.getTime();
+    const sunriseTime = sunrise.getTime();
+    const sunsetTime = sunset.getTime();
+    
+    if (nowTime < sunriseTime || nowTime > sunsetTime) {
+        document.getElementById('sun').style.opacity = '0';
+        return;
+    }
+    
+    document.getElementById('sun').style.opacity = '1';
+    
+    const totalDaylight = sunsetTime - sunriseTime;
+    const elapsedTime = nowTime - sunriseTime;
+    let progress = elapsedTime / totalDaylight;
+    progress = Math.max(0, Math.min(progress, 1));
+    
+    const radius = 40;
+    const centerX = 50;
+    const centerY = 50;
+    const angle = progress * Math.PI;
+    const sunX = centerX + radius * Math.cos(angle);
+    const sunY = centerY - radius * Math.sin(angle);
+    
+    const sun = document.getElementById('sun');
+    sun.style.left = `calc(${sunX}% - 12.5px)`;
+    sun.style.top = `calc(${sunY}% - 12.5px)`;
+    
+    if (progress < 0.25 || progress > 0.75) {
+        sun.style.background = '#ff9900';
+        sun.style.boxShadow = '0 0 30px #ff9900';
+    } else {
+        sun.style.background = '#ffcc00';
+        sun.style.boxShadow = '0 0 40px #ffcc00';
+    }
+}
+
+function calculateMoonPhase(date) {
+    const referenceDate = new Date('2000-01-06T18:14:00Z');
+    const lunarCycle = 29.53058867 * 24 * 60 * 60 * 1000;
+    const diff = date - referenceDate;
+    const phase = (diff % lunarCycle) / lunarCycle;
+    const illumination = (1 - Math.cos(2 * Math.PI * phase)) / 2;
+
+    const phases = [
+        { icon: '🌑', name: 'New Moon', min: 0.00, max: 0.02 },
+        { icon: '🌒', name: 'Waxing Crescent', min: 0.02, max: 0.25 },
+        { icon: '🌓', name: 'First Quarter', min: 0.25, max: 0.35 },
+        { icon: '🌔', name: 'Waxing Gibbous', min: 0.35, max: 0.45 },
+        { icon: '🌕', name: 'Full Moon', min: 0.45, max: 0.55 },
+        { icon: '🌖', name: 'Waning Gibbous', min: 0.55, max: 0.65 },
+        { icon: '🌗', name: 'Last Quarter', min: 0.65, max: 0.75 },
+        { icon: '🌘', name: 'Waning Crescent', min: 0.75, max: 0.92 },
+        { icon: '🌑', name: 'New Moon', min: 0.92, max: 1.00 }
+    ];
+
+    const currentPhase = phases.find(p => phase >= p.min && phase < p.max) || { icon: '🌑', name: 'New Moon' };
+    return {
+        icon: currentPhase.icon,
+        name: currentPhase.name,
+        illumination: (illumination * 100).toFixed(1)
+    };
+}
+
+function updateMoonPhase() {
+    const date = new Date();
+    const moonData = calculateMoonPhase(date);
+    document.getElementById('moon-phase-icon').textContent = moonData.icon;
+    document.getElementById('moon-phase-details').textContent = moonData.name;
+    document.getElementById('moon-illumination').textContent = `${moonData.illumination}% illuminated`;
+}
+
+function init() {
+    displayDateTime();
+    setInterval(displayDateTime, 1000);
+    
+    fetchSunTimes();
+    updateMoonPhase();
+    setInterval(updateMoonPhase, 3600000);
+    
+    initTemperatureChart();
+    
+    fetchWeatherData();
+    setInterval(fetchWeatherData, 300000);
+}
+
+window.onload = init;
